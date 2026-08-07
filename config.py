@@ -1,0 +1,1 @@
+NOTES_DB_NAME = "notes.db"

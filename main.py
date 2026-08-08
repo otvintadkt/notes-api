@@ -51,15 +51,15 @@ def post_note(note: BaseNote):
 		cursor = connection.cursor()
 		try:
 			cursor.execute("""
-            INSERT INTO notes (name, date_posted, content)
+			INSERT INTO notes (name, date_posted, content)
             VALUES (?, ?, ?)
             """,
-			               (note.name, datetime.now().isoformat(), note.content)
+			(note.name, datetime.now().isoformat(), note.content)
 			               )
 			new_id = cursor.lastrowid
-			return {"Success, note id": new_id}
+			return {"status": "Success", "note id": new_id}
 		except:
-			return {"Fail"}
+			return {"status": "Fail"}
 
 
 @app.get("/{note_id}")
@@ -70,11 +70,12 @@ def get_note_by_id(note_id: int):
             SELECT * FROM notes WHERE id = ?
         """, (note_id,)).fetchall()
 		if len(note) == 0:
-			return {"Note with this id doesn't exist"}
+			return {"message": "Note with this id doesn't exist"}
 		else:
 			return note
 
 
+@app.delete("/{note_id}")
 def delete_note_by_id(note_id: int):
 	with sqlite3.connect(NOTES_DB_NAME) as connection:
 		cursor = connection.cursor()
@@ -82,6 +83,6 @@ def delete_note_by_id(note_id: int):
             DELETE FROM notes WHERE id = ?
         """, (note_id,))
 		if cursor.rowcount > 0:
-			return {f"Successfully deleted note with id {note_id}"}
+			return {"status": f"Successfully deleted note with id {note_id}"}
 		else:
-			return {f"Couldn't delete note with id {note_id}"}
+			return {"status": f"Couldn't delete note with id {note_id}"}

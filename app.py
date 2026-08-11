@@ -1,18 +1,26 @@
 import streamlit as st
 import requests
+
 from config import *
 
 st.set_page_config(page_title="Notes App", layout="wide")
 st.title("Notes Dashboard")
 
-# Create two tabs for viewing and adding notes
 tab_view, tab_add = st.tabs(["View & Manage Notes", "Add New Note"])
 
-# --- TAB 1: VIEW & DELETE NOTES ---
 with tab_view:
 	st.header("All Notes")
 
+	# if "success_message_post" in st.session_state:
+	# 	st.session_state.pop("success_message_post")
+	# Doesn't work how I want
+
+	if "success_message_delete" in st.session_state:
+		st.success(st.session_state["success_message_delete"])
+
 	if st.button("Refresh Notes"):
+		if "success_message_delete" in st.session_state:
+			st.session_state.pop("success_message_delete")
 		st.rerun()
 
 	try:
@@ -26,29 +34,29 @@ with tab_view:
 				for note in notes:
 					note_id, name, date_posted, content = note
 
-					with st.expander(f"{name}"):
-						st.caption(f"Posted on: {date_posted}, ID: {note_id}")
-						st.write(content)
+					container = st.container(border=True)
+					container.title(name)
+					container.write(content)
+					container.caption(f"Posted on: {date_posted}")
 
-						if st.button(f"Delete note {note_id}"):
-							del_response = requests.delete(f"{API_URL}/{note_id}")
-							if del_response.status_code == 200:
-								st.success(f"Note {note_id} deleted successfully")
-								st.rerun()
-							else:
-								st.error("Failed to delete the note")
+					if container.button(f"Delete note", key=note_id):
+						del_responses = requests.delete(f"{API_URL}/{note_id}")
+						if del_responses.status_code == 200:
+							st.session_state["success_message_delete"] = f"Note {note_id} deleted successfully"
+							st.rerun()
+						else:
+							st.error("Failed to delete the note")
 		else:
 			st.error(f"Error fetching notes: {response.status_code}")
 
 	except requests.exceptions.ConnectionError:
 		st.error("Could not connect to FastAPI backend. Make sure your `main.py` is running on http://127.0.0.1:8000.")
 
-# --- TAB 2: CREATE A NEW NOTE ---
 with tab_add:
 	st.header("Create a New Note")
 
-	if "success_message" in st.session_state:
-		st.success(st.session_state["success_message"])
+	if "success_message_post" in st.session_state:
+		st.success(st.session_state["success_message_post"])
 	if "clear_note_form" not in st.session_state:
 		st.session_state["clear_note_form"] = False
 	if "note_title" not in st.session_state:
@@ -75,7 +83,7 @@ with tab_add:
 					res = requests.post(f"{API_URL}/", json=payload)
 					if res.status_code == 200 and res.json().get("status") == "Success":
 						st.session_state["clear_note_form"] = True
-						st.session_state["success_message"] = (f"Note created successfully! ID: "
+						st.session_state["success_message_post"] = (f"Note created successfully! ID: "
 						                                       f"{res.json().get('note id')}")
 						st.rerun()
 					else:

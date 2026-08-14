@@ -1,2 +1,4 @@
-NOTES_DB_NAME = "notes.db"
+DB_NAME = "users.db"
 API_URL = "http://127.0.0.1:8000"
+MIN_PASSWORD_LENGTH = 8
+MIN_USERNAME_LENGTH = 3

@@ -45,6 +45,8 @@ class BaseNote(BaseModel):
 	name: str
 	content: str
 	user_id: int
+
+
 # date_posted: datetime
 
 
@@ -70,15 +72,15 @@ def post_note(note: BaseNote):
 		cursor = connection.cursor()
 		try:
 			cursor.execute(
-			"""
-			INSERT INTO notes (name, date_posted, content)
-            VALUES (?, ?, ?, ?)
-            """,(note.name, datetime.now().isoformat(), note.content, note.user_id)
+				"""
+				INSERT INTO notes (name, date_posted, content)
+				VALUES (?, ?, ?, ?)
+				""", (note.name, datetime.now().isoformat(), note.content, note.user_id)
 			)
 			new_id = cursor.lastrowid
 			return {"status": "Success", "note id": new_id}
 		except:
-			return {"status": "Fail"}
+			raise HTTPException(status_code=400, detail="Failed to post note")
 
 
 @app.post("/register")
@@ -114,7 +116,7 @@ def get_note_by_id(note_id: int):
             SELECT * FROM notes WHERE id = ?
         """, (note_id,)).fetchall()
 		if len(note) == 0:
-			return {"message": "Note with this id doesn't exist"}
+			raise HTTPException(status_code=400, detail="Note with this id doesn't exist")
 		else:
 			return note
 
@@ -129,4 +131,4 @@ def delete_note_by_id(note_id: int):
 		if cursor.rowcount > 0:
 			return {"status": f"Successfully deleted note with id {note_id}"}
 		else:
-			return {"status": f"Couldn't delete note with id {note_id}"}
+			raise HTTPException(status_code=400, detail=f"Couldn't delete note with id {note_id}")

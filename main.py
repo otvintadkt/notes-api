@@ -1,5 +1,6 @@
 from typing import Any, Optional
 from datetime import datetime
+import argon2.exceptions
 from fastapi import FastAPI, Path, HTTPException
 from pydantic import BaseModel
 import sqlite3
@@ -54,6 +55,12 @@ class UserRegister(BaseModel):
 	username: str
 	password: str
 
+class UserLogin(BaseModel):
+	username: str
+	password: str
+	# though it looks just like UserRegister now, I'm going to leave two classes instead of one
+	# because probably they will be different in future
+
 
 @app.get("/")
 def get_all_notes():
@@ -103,9 +110,33 @@ def register(user: UserRegister):
 				VALUES (?, ?)
 				""", (user.username, password_hashed)
 			)
-			return {"Success": "User registered successfully"}
+			return {"Success": f"User registered successfully"}
 		except sqlite3.IntegrityError:
 			raise HTTPException(status_code=400, detail="User with such username already exists")
+
+
+@app.post("/login")
+def login(user: UserLogin):
+	with sqlite3.connect(DB_NAME) as connection:
+		cursor = connection.cursor()
+
+		result = cursor.execute(
+			"""
+			SELECT password_hash FROM users WHERE username = ?
+			""", (user.username,)
+		).fetchone()
+
+		if result is None:
+			raise HTTPException(status_code=400, detail="User with such username doesn't exist")
+		password_hash_from_db = result[0]
+
+		hasher = PasswordHasher()
+		try:
+			hasher.verify(password_hash_from_db, user.password)
+		except argon2.exceptions.VerifyMismatchError:
+			raise HTTPException(status_code=400, detail="Wrong password!")
+
+		return {"Success": "User logged in successfully"}
 
 
 @app.get("/{note_id}")

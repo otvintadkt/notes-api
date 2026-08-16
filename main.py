@@ -1,10 +1,13 @@
 from typing import Any, Optional
 from datetime import datetime
+from argon2 import PasswordHasher
+import secret
 import argon2.exceptions
-from fastapi import FastAPI, Path, HTTPException
+from fastapi import FastAPI, Path, HTTPException, Depends
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 import sqlite3
-from argon2 import PasswordHasher
+import jwt
 from config import *
 
 app = FastAPI()
@@ -34,18 +37,10 @@ with sqlite3.connect(DB_NAME) as connection:
 		"""
 	)
 
-"""
-get - get information
-post - create smth new
-put - update
-delete - delete smth
-"""
-
 
 class BaseNote(BaseModel):
 	name: str
 	content: str
-	user_id: int
 
 
 # date_posted: datetime
@@ -55,21 +50,38 @@ class UserRegister(BaseModel):
 	username: str
 	password: str
 
+
 class UserLogin(BaseModel):
 	username: str
 	password: str
-	# though it looks just like UserRegister now, I'm going to leave two classes instead of one
-	# because probably they will be different in future
+
+
+# though it looks just like UserRegister now, I'm going to leave two classes instead of one
+# because probably they will be different in future
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
+
+def get_current_user_id(token: str = Depends(oauth2_scheme)):
+	try:
+		payload = jwt.decode(token, secret.SECRET_KEY, algorithms=["HS256"])
+		user_id = payload.get("id")
+
+		if user_id is None:
+			raise HTTPException(status_code=401, detail="Wrong token")
+		return user_id
+	except jwt.exceptions.DecodeError:
+		raise HTTPException(status_code=401, detail="Invalid token")
 
 
 @app.get("/")
-def get_all_notes():
+def get_all_notes(user_id: int = Depends(get_current_user_id)):
 	with sqlite3.connect(DB_NAME) as connection:
 		cursor = connection.cursor()
 		notes = cursor.execute(
 			"""
-			SELECT * FROM notes;
-			""").fetchall()
+			SELECT * FROM notes WHERE user_id = ?;
+			""", (user_id,)).fetchall()
 		return notes
 
 
@@ -122,13 +134,14 @@ def login(user: UserLogin):
 
 		result = cursor.execute(
 			"""
-			SELECT password_hash FROM users WHERE username = ?
+			SELECT id, password_hash FROM users WHERE username = ?
 			""", (user.username,)
 		).fetchone()
 
 		if result is None:
 			raise HTTPException(status_code=400, detail="User with such username doesn't exist")
-		password_hash_from_db = result[0]
+		password_hash_from_db = result[1]
+		user_id = result[0]
 
 		hasher = PasswordHasher()
 		try:
@@ -136,7 +149,9 @@ def login(user: UserLogin):
 		except argon2.exceptions.VerifyMismatchError:
 			raise HTTPException(status_code=400, detail="Wrong password!")
 
-		return {"Success": "User logged in successfully"}
+		payload = {"username": user.username, "id": user_id}
+		token = jwt.encode(payload, secret.SECRET_KEY, algorithm="HS256")
+		return {"access_token": token, "token_type": "bearer"}
 
 
 @app.get("/{note_id}")

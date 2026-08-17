@@ -43,9 +43,6 @@ class BaseNote(BaseModel):
 	content: str
 
 
-# date_posted: datetime
-
-
 class UserRegister(BaseModel):
 	username: str
 	password: str
@@ -54,10 +51,9 @@ class UserRegister(BaseModel):
 class UserLogin(BaseModel):
 	username: str
 	password: str
+	# though it looks just like UserRegister now, I'm going to leave two classes instead of one
+	# because probably they will be different in future
 
-
-# though it looks just like UserRegister now, I'm going to leave two classes instead of one
-# because probably they will be different in future
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
@@ -81,7 +77,8 @@ def get_all_notes(user_id: int = Depends(get_current_user_id)):
 		notes = cursor.execute(
 			"""
 			SELECT * FROM notes WHERE user_id = ?;
-			""", (user_id,)).fetchall()
+			""", (user_id,)
+		).fetchall()
 		return notes
 
 
@@ -158,9 +155,12 @@ def login(user: UserLogin):
 def get_note_by_id(note_id: int):
 	with sqlite3.connect(DB_NAME) as connection:
 		cursor = connection.cursor()
-		note = cursor.execute("""
+		note = cursor.execute(
+			"""
             SELECT * FROM notes WHERE id = ?
-        """, (note_id,)).fetchall()
+            """, (note_id,)
+		).fetchall()
+
 		if len(note) == 0:
 			raise HTTPException(status_code=400, detail="Note with this id doesn't exist")
 		else:
@@ -171,9 +171,11 @@ def get_note_by_id(note_id: int):
 def delete_note_by_id(note_id: int):
 	with sqlite3.connect(DB_NAME) as connection:
 		cursor = connection.cursor()
-		cursor.execute("""
+		cursor.execute(
+			"""
             DELETE FROM notes WHERE id = ?
-        """, (note_id,))
+            """, (note_id,)
+		)
 		if cursor.rowcount > 0:
 			return {"status": f"Successfully deleted note with id {note_id}"}
 		else:

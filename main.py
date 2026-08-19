@@ -1,10 +1,10 @@
-from typing import Any, Optional
+from typing import Annotated
 from datetime import datetime
 from argon2 import PasswordHasher
 import secret
 import argon2.exceptions
-from fastapi import FastAPI, Path, HTTPException, Depends
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 import sqlite3
 import jwt
@@ -69,6 +69,7 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)):
 	except jwt.exceptions.DecodeError:
 		raise HTTPException(status_code=401, detail="Invalid token")
 
+UserIdDep = Annotated[int, Depends(get_current_user_id)]
 
 @app.get("/")
 def get_all_notes(user_id: int = Depends(get_current_user_id)):
@@ -82,16 +83,16 @@ def get_all_notes(user_id: int = Depends(get_current_user_id)):
 		return notes
 
 
-@app.post("/")
-def post_note(note: BaseNote):
+@app.post("/post_note")
+def post_note(note: BaseNote, user_id: UserIdDep):
 	with sqlite3.connect(DB_NAME) as connection:
 		cursor = connection.cursor()
 		try:
 			cursor.execute(
 				"""
-				INSERT INTO notes (name, date_posted, content)
+				INSERT INTO notes (name, date_posted, content, user_id)
 				VALUES (?, ?, ?, ?)
-				""", (note.name, datetime.now().isoformat(), note.content, note.user_id)
+				""", (note.name, datetime.now().isoformat(), note.content, user_id)
 			)
 			new_id = cursor.lastrowid
 			return {"status": "Success", "note id": new_id}
@@ -125,56 +126,64 @@ def register(user: UserRegister):
 
 
 @app.post("/login")
-def login(user: UserLogin):
+def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
 	with sqlite3.connect(DB_NAME) as connection:
 		cursor = connection.cursor()
 
 		result = cursor.execute(
 			"""
 			SELECT id, password_hash FROM users WHERE username = ?
-			""", (user.username,)
+			""", (form_data.username,)
 		).fetchone()
 
 		if result is None:
-			raise HTTPException(status_code=400, detail="User with such username doesn't exist")
+			raise HTTPException(status_code=401, detail="User with such username doesn't exist")
 		password_hash_from_db = result[1]
 		user_id = result[0]
 
 		hasher = PasswordHasher()
 		try:
-			hasher.verify(password_hash_from_db, user.password)
+			hasher.verify(password_hash_from_db, form_data.password)
 		except argon2.exceptions.VerifyMismatchError:
-			raise HTTPException(status_code=400, detail="Wrong password!")
+			raise HTTPException(status_code=401, detail="Wrong password!")
 
-		payload = {"username": user.username, "id": user_id}
+		payload = {"username": form_data.username, "id": user_id}
 		token = jwt.encode(payload, secret.SECRET_KEY, algorithm="HS256")
 		return {"access_token": token, "token_type": "bearer"}
 
 
 @app.get("/{note_id}")
-def get_note_by_id(note_id: int):
+def get_note_by_id(note_id: int, user_id: UserIdDep):
 	with sqlite3.connect(DB_NAME) as connection:
 		cursor = connection.cursor()
 		note = cursor.execute(
 			"""
-            SELECT * FROM notes WHERE id = ?
+            SELECT id, name, date_posted, content, user_id FROM notes WHERE id = ?
             """, (note_id,)
-		).fetchall()
+		).fetchone()
 
-		if len(note) == 0:
-			raise HTTPException(status_code=400, detail="Note with this id doesn't exist")
-		else:
-			return note
+		if note is None:
+			raise HTTPException(status_code=404, detail="Note not found")
+		note_owner_id = note[4]
+		if note_owner_id != user_id:
+			raise HTTPException(status_code=403, detail="You do not have access to this note")
+		return {
+			"id": note[0],
+			"name": note[1],
+			"date_posted": note[2],
+			"content": note[3]
+		}
 
 
 @app.delete("/{note_id}")
-def delete_note_by_id(note_id: int):
+def delete_note_by_id(note_id: int, user_id: UserIdDep):
+	get_note_by_id(note_id, user_id) # Checking access and existence of such note
 	with sqlite3.connect(DB_NAME) as connection:
 		cursor = connection.cursor()
 		cursor.execute(
 			"""
-            DELETE FROM notes WHERE id = ?
-            """, (note_id,)
+            DELETE FROM notes WHERE id = ? AND user_id = ?
+            """, (note_id, user_id)
 		)
 		if cursor.rowcount > 0:
 			return {"status": f"Successfully deleted note with id {note_id}"}
